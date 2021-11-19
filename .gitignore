@@ -1,0 +1,9 @@
+gitian-builder/
+releases/
+secrets/
+gitian.sigs.ltc/
+litecoin-detached-sigs/
+litecoin-binaries/
+litecoin-*.tar.gz
+litecoin-*.exe
+*.p12
