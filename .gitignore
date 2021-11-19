@@ -4,6 +4,7 @@ secrets/
 gitian.sigs.ltc/
 litecoin-detached-sigs/
 litecoin-binaries/
-litecoin-*.tar.gz
-litecoin-*.exe
+*.tar.gz
+*.exe
+*.dmg
 *.p12

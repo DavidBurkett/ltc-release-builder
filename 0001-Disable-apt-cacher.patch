@@ -1,0 +1,25 @@
+From b8d662f6b721b0f4992ca234d5db312f3564b08a Mon Sep 17 00:00:00 2001
+From: David Burkett <davidburkett38@gmail.com>
+Date: Fri, 19 Nov 2021 10:58:23 -0500
+Subject: [PATCH] Disable apt cacher
+
+---
+ bin/make-base-vm | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bin/make-base-vm b/bin/make-base-vm
+index 30e4fbf..be0b168 100755
+--- a/bin/make-base-vm
++++ b/bin/make-base-vm
+@@ -198,7 +198,7 @@ if [ $DOCKER = "1" ]; then
+ FROM $base_image
+ 
+ ENV DEBIAN_FRONTEND=noninteractive
+-RUN echo 'Acquire::http { Proxy "$MIRROR_BASE"; };' > /etc/apt/apt.conf.d/50cacher
++# RUN echo 'Acquire::http { Proxy "$MIRROR_BASE"; };' > /etc/apt/apt.conf.d/50cacher
+ RUN apt-get update && apt-get --no-install-recommends -y install $addpkg
+ 
+ RUN useradd -ms /bin/bash -U $DISTRO
+-- 
+2.25.1
+
