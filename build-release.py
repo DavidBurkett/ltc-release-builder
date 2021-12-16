@@ -48,7 +48,10 @@ def parse_args():
     args.macos = 'm' in args.os
 
     args.sign_prog = 'true' if args.detach_sign else 'gpg --batch --yes --detach-sign'
-    args.is_bionic = b'bionic' in subprocess.check_output(['lsb_release', '-cs'])
+
+    lsb_rel = subprocess.check_output(['lsb_release', '-cs'])
+    args.is_bionic = b'bionic' in lsb_rel
+    args.is_debian = any(r in lsb_rel for r in [b'jessie', b'stretch', b'buster', b'bullseye'])
     
     script_name = os.path.basename(sys.argv[0])
     if not args.signer:
@@ -224,6 +227,13 @@ def preset_gpg_passphrase():
     global args, gpg_password
     
     subprocess.call(['gpgconf', '--kill', 'gpg-agent'])
+
+    if args.is_debian:
+        try:
+            subprocess.call(['rm', '-r', '/var/run/user/0/gnupg/*gpg-agent*'])
+        except Exception as e:
+            print('Error clearing gpg-agents: {0}'.format(e))
+
     subprocess.check_call(['gpg-agent', '--daemon', '--allow-preset-passphrase'])
     
     keygrips = subprocess.run("gpg --fingerprint --with-keygrip {} | awk '/Keygrip/ {{ print $3}}'".format(args.signer), shell=True, text=True, stdout=subprocess.PIPE).stdout.splitlines()
