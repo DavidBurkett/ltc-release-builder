@@ -13,6 +13,7 @@ packages:
 - "binutils"
 - "bsdmainutils"
 - "ca-certificates"
+- "cmake"
 - "curl"
 - "faketime"
 - "git"
