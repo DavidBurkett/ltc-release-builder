@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('-S', '--setup', action='store_true', dest='setup', help='Set up the Gitian building environment. Uses LXC. If you want to use KVM, use the --kvm option. Only works on Debian-based systems (Ubuntu, Debian)')
     parser.add_argument('-D', '--detach-sign', action='store_true', dest='detach_sign', help='Create the assert file for detached signing. Will not commit anything.')
     parser.add_argument('-n', '--no-commit', action='store_false', dest='commit_files', help='Do not commit anything to git')
+    parser.add_argument('-g', '--gpg-password', dest='gpg_password', default='', help='GPG password')
     parser.add_argument('--disable-apt-cacher', action='store_true', dest='disable_apt_cacher', help='Apply temporary patch to make-base-vm that disables apt-cacher')
     parser.add_argument('signer', nargs='?', help='GPG signer to sign each build assert file')
     parser.add_argument('version', nargs='?', help='Version number, commit, or branch to build. If building a commit or branch, the -c option must be specified')
@@ -221,7 +222,7 @@ def verify():
 
 
 def preset_gpg_passphrase():
-    global args, gpg_password
+    global args
     
     subprocess.call(['gpgconf', '--kill', 'gpg-agent'])
     subprocess.check_call(['gpg-agent', '--daemon', '--allow-preset-passphrase'])
@@ -229,10 +230,10 @@ def preset_gpg_passphrase():
     keygrips = subprocess.run("gpg --fingerprint --with-keygrip {} | awk '/Keygrip/ {{ print $3}}'".format(args.signer), shell=True, text=True, stdout=subprocess.PIPE).stdout.splitlines()
     
     for keygrip in keygrips:
-        subprocess.check_call('echo "{0}"  | /usr/lib/gnupg/gpg-preset-passphrase --preset {1}'.format(gpg_password, keygrip), shell=True)
+        subprocess.check_call('echo "{0}"  | /usr/lib/gnupg/gpg-preset-passphrase --preset {1}'.format(args.gpg_password, keygrip), shell=True)
     
 def main():
-    global args, workdir, gpg_password
+    global args, workdir
     
     args = parse_args()
     workdir = os.getcwd()
@@ -251,8 +252,8 @@ def main():
         if 'LXC_GUEST_IP' not in os.environ.keys():
             os.environ['LXC_GUEST_IP'] = '10.0.3.5'
     
-    if args.build or args.sign:
-        gpg_password = getpass.getpass("GPG Password: ") # TODO: First check if key is actually password protected
+    if (args.build or args.sign) and len(args.gpg_password) == 0:
+        args.gpg_password = getpass.getpass("GPG Password: ") # TODO: First check if key is actually password protected
 
     if args.setup:
         setup()
