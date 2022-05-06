@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('-S', '--setup', action='store_true', dest='setup', help='Set up the Gitian building environment. Uses LXC. If you want to use KVM, use the --kvm option. Only works on Debian-based systems (Ubuntu, Debian)')
     parser.add_argument('-D', '--detach-sign', action='store_true', dest='detach_sign', help='Create the assert file for detached signing. Will not commit anything.')
     parser.add_argument('-n', '--no-commit', action='store_false', dest='commit_files', help='Do not commit anything to git')
+    parser.add_argument('--codesign', action='store_true', dest='codesign', help='Create detached signatures')
     parser.add_argument('-g', '--gpg-password', dest='gpg_password', default='', help='GPG password')
     parser.add_argument('--disable-apt-cacher', action='store_true', dest='disable_apt_cacher', help='Apply temporary patch to make-base-vm that disables apt-cacher')
     parser.add_argument('signer', nargs='?', help='GPG signer to sign each build assert file')
@@ -127,14 +128,14 @@ def build():
 
     if args.linux:
         print('\nCompiling ' + args.version + ' Linux')
-        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-linux.yml'])
+        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-linux.yml'])
         preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-linux', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-linux.yml'])
         subprocess.check_call('mv build/out/litecoin-*.tar.gz build/out/src/litecoin-*.tar.gz ../litecoin-binaries/'+args.version, shell=True)
 
     if args.windows:
         print('\nCompiling ' + args.version + ' Windows')
-        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-win.yml'])
+        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-win.yml'])
         preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-win-unsigned', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-win.yml'])
         subprocess.check_call('mv build/out/litecoin-*-win-unsigned.tar.gz inputs/', shell=True)
@@ -142,7 +143,7 @@ def build():
 
     if args.macos:
         print('\nCompiling ' + args.version + ' MacOS')
-        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-osx.yml'])
+        subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-osx.yml'])
         preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-osx-unsigned', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-osx.yml'])
         subprocess.check_call('mv build/out/litecoin-*-osx-unsigned.tar.gz inputs/', shell=True)
@@ -156,6 +157,33 @@ def build():
         subprocess.check_call(['git', 'add', args.version+'-osx-unsigned/'+args.signer])
         subprocess.check_call(['git', 'commit', '-m', 'Add '+args.version+' unsigned sigs for '+args.signer])
 
+def codesign():
+    # Set GPG Passphrase
+    preset_gpg_passphrase()
+    
+    if args.windows:
+        print('\nCode-signing ' + args.version + ' Windows')
+        
+        os.chdir(workdir)
+        os.makedirs(os.path.join(workdir, 'signing', args.version, 'unsigned'), exist_ok=True)
+        subprocess.check_call('cp ./litecoin-binaries/'+args.version+'/*-unsigned.exe ./signing/'+args.version+'/unsigned/', shell=True)
+        subprocess.check_call('cp ./maintainer/win-codesign* ./signing/'+args.version+'/', shell=True)
+        
+        os.chdir(os.path.join(workdir, 'signing', args.version))
+        subprocess.check_call('./win-codesign-create.sh -pkcs12 ../../secrets/windows.p12 -readpass ../../secrets/windows.p12.pass.txt', shell=True)
+        
+        os.chdir(os.path.join(workdir, 'litecoin-detached-sigs'))
+        subprocess.check_call(['git', 'checkout', '-B', args.version])
+        subprocess.check_call(['rm', '-rf', '*'])
+        subprocess.check_call(['tar', 'xf', '../signing/'+args.version+'/signature-win.tar.gz'])
+        subprocess.check_call(['git', 'add', '-A'])
+        
+    if args.commit_files:
+        os.chdir(os.path.join(workdir, 'litecoin-detached-sigs'))
+        subprocess.check_call(['git', 'commit', '-m', 'point to '+args.version])
+        subprocess.check_call(['git', 'tag', '-s', 'v'+args.version, '-m', 'v'+args.version, 'HEAD'])
+        subprocess.check_call(['git', 'push', '--set-upstream', 'origin', 'v'+args.version, '--tags'])
+
 def sign():
     global args, workdir
     os.chdir(os.path.join(workdir, 'gitian-builder'))
@@ -166,14 +194,14 @@ def sign():
     if args.windows:
         print('\nSigning ' + args.version + ' Windows')
         subprocess.check_call('cp inputs/litecoin-' + args.version + '-win-unsigned.tar.gz inputs/litecoin-win-unsigned.tar.gz', shell=True)
-        subprocess.check_call(['bin/gbuild', '--skip-image', '--upgrade', '--commit', 'signature='+args.commit, '../gitian-descriptors/gitian-win-signer.yml'])
+        subprocess.check_call(['bin/gbuild', '--skip-image', '--upgrade', '--fetch-tags', '--commit', 'signature='+args.commit, '../gitian-descriptors/gitian-win-signer.yml'])
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-win-signed', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-win-signer.yml'])
         subprocess.check_call('mv build/out/litecoin-*win64-setup.exe ../litecoin-binaries/'+args.version, shell=True)
 
     if args.macos:
         print('\nSigning ' + args.version + ' MacOS')
         subprocess.check_call('cp inputs/litecoin-' + args.version + '-osx-unsigned.tar.gz inputs/litecoin-osx-unsigned.tar.gz', shell=True)
-        subprocess.check_call(['bin/gbuild', '--skip-image', '--upgrade', '--commit', 'signature='+args.commit, '../gitian-descriptors/gitian-osx-signer.yml'])
+        subprocess.check_call(['bin/gbuild', '--skip-image', '--upgrade', '--fetch-tags', '--commit', 'signature='+args.commit, '../gitian-descriptors/gitian-osx-signer.yml'])
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-osx-signed', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-osx-signer.yml'])
         subprocess.check_call('mv build/out/litecoin-osx-signed.dmg ../litecoin-binaries/'+args.version+'/litecoin-'+args.version+'-osx.dmg', shell=True)
 
@@ -252,13 +280,13 @@ def main():
         if 'LXC_GUEST_IP' not in os.environ.keys():
             os.environ['LXC_GUEST_IP'] = '10.0.3.5'
     
-    if (args.build or args.sign) and len(args.gpg_password) == 0:
+    if (args.build or args.sign or args.codesign) and len(args.gpg_password) == 0:
         args.gpg_password = getpass.getpass("GPG Password: ") # TODO: First check if key is actually password protected
 
     if args.setup:
         setup()
 
-    if not args.build and not args.sign and not args.verify:
+    if not args.build and not args.sign and not args.verify and not args.codesign:
         sys.exit(0)
 
     if args.pull:
@@ -275,6 +303,9 @@ def main():
 
     if args.build:
         build()
+
+    if args.codesign:
+        codesign()
 
     if args.sign:
         sign()
