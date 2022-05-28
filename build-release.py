@@ -23,7 +23,8 @@ def parse_args():
     parser.add_argument('-S', '--setup', action='store_true', dest='setup', help='Set up the Gitian building environment. Uses LXC. If you want to use KVM, use the --kvm option. Only works on Debian-based systems (Ubuntu, Debian)')
     parser.add_argument('-D', '--detach-sign', action='store_true', dest='detach_sign', help='Create the assert file for detached signing. Will not commit anything.')
     parser.add_argument('-n', '--no-commit', action='store_false', dest='commit_files', help='Do not commit anything to git')
-    parser.add_argument('--codesign', action='store_true', dest='codesign', help='Create detached signatures')
+    parser.add_argument('--codesign', action='store_true', dest='codesign', help='MAINTAINER ONLY: Create detached signatures')
+    parser.add_argument('-P', '--package', action='store_true', dest='package', help='MAINTAINER ONLY: GPG sign all binaries and move into release directory structure')
     parser.add_argument('-g', '--gpg-password', dest='gpg_password', default='', help='GPG password')
     parser.add_argument('--disable-apt-cacher', action='store_true', dest='disable_apt_cacher', help='Apply temporary patch to make-base-vm that disables apt-cacher')
     parser.add_argument('signer', nargs='?', help='GPG signer to sign each build assert file')
@@ -248,7 +249,36 @@ def verify():
 
     return rc
 
-
+def package():
+    global args, workdir
+    rc = 0
+    
+    release_dir = os.path.join(workdir, 'litecoin-binaries', args.version)
+    os.chdir(release_dir)
+    
+    # Set GPG Passphrase
+    preset_gpg_passphrase()
+    
+    print('\nSigning and packaging release\n')
+    
+    # Move relevant files to release directory
+    subprocess.check_call('mkdir -p debug && mv ./*-debug* ./debug', shell=True)
+    subprocess.check_call('mkdir -p unsigned && mv ./*-unsigned* ./unsigned', shell=True)
+    subprocess.check_call('mkdir -p release && find . -maxdepth 1 -type f | xargs mv -t ./release', shell=True)
+    os.chdir(os.path.join(release_dir, 'release'))
+    
+    # Generate SHA256SUMS.asc
+    subprocess.check_call('sha256sum * > SHA256SUMS && gpg --digest-algo sha256 --clearsign SHA256SUMS && rm ./SHA256SUMS', shell=True)
+    
+    # Move to linux, osx, src, and win folders
+    subprocess.check_call('mkdir -p src && mv ./litecoin-' + args.version + '.tar.gz ./src', shell=True)
+    subprocess.check_call('mkdir -p linux && mv ./*-linux* ./linux', shell=True)
+    subprocess.check_call('mkdir -p osx && mv ./*-osx* ./osx', shell=True)
+    subprocess.check_call('mkdir -p win && mv ./*-win* ./win', shell=True)
+    
+    # Sign binaries
+    subprocess.check_call('for f in ./*/*; do if [ ! -d "$f" ]; then gpg --digest-algo sha256 --armor --detach-sign $f; fi done', shell=True)
+    
 def preset_gpg_passphrase():
     global args
     
@@ -280,13 +310,13 @@ def main():
         if 'LXC_GUEST_IP' not in os.environ.keys():
             os.environ['LXC_GUEST_IP'] = '10.0.3.5'
     
-    if (args.build or args.sign or args.codesign) and len(args.gpg_password) == 0:
+    if (args.build or args.sign or args.codesign or args.package) and len(args.gpg_password) == 0:
         args.gpg_password = getpass.getpass("GPG Password: ") # TODO: First check if key is actually password protected
 
     if args.setup:
         setup()
 
-    if not args.build and not args.sign and not args.verify and not args.codesign:
+    if not args.build and not args.sign and not args.verify and not args.codesign and not args.package:
         sys.exit(0)
 
     if args.pull:
@@ -298,8 +328,9 @@ def main():
     print('args.commit=' + args.commit)
     print('args.version=' + args.version)
 
-    os.chdir(os.path.join(workdir, 'gitian-builder'))
-    subprocess.check_call(['git', 'pull'])
+    if args.build or args.sign or args.codesign:
+        os.chdir(os.path.join(workdir, 'gitian-builder'))
+        subprocess.check_call(['git', 'pull'])
 
     if args.build:
         build()
@@ -312,6 +343,11 @@ def main():
 
     if args.verify:
         sys.exit(verify())
+        
+    if args.package:
+        package()
+
+    print('\nDONE\n')
 
 if __name__ == '__main__':
     main()
