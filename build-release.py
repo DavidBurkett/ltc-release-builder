@@ -110,12 +110,12 @@ def setup():
         sys.exit(0)
 
     # Download Mac SDK
-    MAC_SDK = 'Xcode-11.3.1-11C505-extracted-SDK-with-libcxx-headers.tar.gz'
+    MAC_SDK = 'Xcode-12.1-12A7403-extracted-SDK-with-libcxx-headers.tar.gz'
     os.chdir(os.path.join(workdir, 'gitian-builder'))
     os.makedirs('inputs', exist_ok=True)
     if args.macos and not os.path.isfile('inputs/{}'.format(MAC_SDK)):
         subprocess.check_call(['wget', '-O', 'inputs/{}'.format(MAC_SDK), 'https://bitcoincore.org/depends-sources/sdks/{}'.format(MAC_SDK)])
-        subprocess.check_call(["echo '436df6dfc7073365d12f8ef6c1fdb060777c720602cc67c2dcf9a59d94290e38 inputs/{}' | sha256sum -c".format(MAC_SDK)], shell=True)
+        subprocess.check_call(["echo 'be17f48fd0b08fb4dcd229f55a6ae48d9f781d210839b4ea313ef17dd12d6ea5 inputs/{}' | sha256sum -c".format(MAC_SDK)], shell=True)
 
     # Download osslsigncode-2.0
     subprocess.check_call(['wget', '-O', 'inputs/osslsigncode-2.0.tar.gz', 'https://github.com/mtrojnar/osslsigncode/archive/2.0.tar.gz'])
