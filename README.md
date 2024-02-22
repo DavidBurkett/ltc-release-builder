@@ -3,7 +3,7 @@
 ltc-release-builder is an updated gitian builder script for building Litecoin Core 0.21.x. 
 It includes additional features and bugfixes not present in the original gitian-builder script.
 
-We reccomend building with docker mode, please see [the Docker installation website](https://docs.docker.com/engine/install/)
+We recommend building with docker mode, please see [the Docker installation website](https://docs.docker.com/engine/install/)
 for appropriate Docker Desktop for your computer. When building, please make sure to have Docker Desktop open on your system.
 
 ### Setup
