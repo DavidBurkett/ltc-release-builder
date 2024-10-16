@@ -30,16 +30,17 @@ def parse_args():
     parser.add_argument('signer', nargs='?', help='GPG signer to sign each build assert file')
     parser.add_argument('version', nargs='?', help='Version number, commit, or branch to build. If building a commit or branch, the -c option must be specified')
     args = parser.parse_args()
-    
+
+    args.gpg_configured = False
     if args.commit and args.pull:
         raise Exception('Error: cannot have both commit and pull')
 
     if args.kvm and args.docker:
         raise Exception('Error: cannot have both kvm and docker')
-    
+
     # Add leading 'v' for tags
     args.commit = ('' if args.commit else 'v') + args.version
-    
+
     # Set build & sign if buildsign
     if args.buildsign:
         args.build = True
@@ -52,7 +53,7 @@ def parse_args():
 
     args.sign_prog = 'true' if args.detach_sign else 'gpg --batch --yes --detach-sign'
     args.is_bionic = b'bionic' in subprocess.check_output(['lsb_release', '-cs'])
-    
+
     script_name = os.path.basename(sys.argv[0])
     if not args.signer:
         print(script_name+': Missing signer')
@@ -62,7 +63,7 @@ def parse_args():
         print(script_name+': Missing version')
         print('Try '+script_name+' --help for more information')
         sys.exit(1)
-        
+
     return args
 
 def setup():
@@ -93,7 +94,7 @@ def setup():
         if args.disable_apt_cacher:
             os.chdir(os.path.join(workdir, 'gitian-builder'))
             subprocess.check_call(['git', 'am', '../0001-Disable-apt-cacher.patch'])
-        
+
     # Make Gitian VM
     os.chdir(os.path.join(workdir, 'gitian-builder'))
     make_image_prog = ['bin/make-base-vm', '--suite', 'bionic', '--arch', 'amd64']
@@ -103,7 +104,7 @@ def setup():
         make_image_prog += ['--lxc']
     subprocess.check_call(make_image_prog)
     os.chdir(workdir)
-    
+
     if args.is_bionic and not args.kvm and not args.docker:
         subprocess.check_call(['sudo', 'sed', '-i', 's/lxcbr0/br0/', '/etc/default/lxc-net'])
         print('Reboot is required')
@@ -161,24 +162,24 @@ def build():
 def codesign():
     # Set GPG Passphrase
     preset_gpg_passphrase()
-    
+
     if args.windows:
         print('\nCode-signing ' + args.version + ' Windows')
-        
+
         os.chdir(workdir)
         os.makedirs(os.path.join(workdir, 'signing', args.version, 'unsigned'), exist_ok=True)
         subprocess.check_call('cp ./litecoin-binaries/'+args.version+'/*-unsigned.exe ./signing/'+args.version+'/unsigned/', shell=True)
         subprocess.check_call('cp ./maintainer/win-codesign* ./signing/'+args.version+'/', shell=True)
-        
+
         os.chdir(os.path.join(workdir, 'signing', args.version))
         subprocess.check_call('./win-codesign-create.sh -pkcs12 ../../secrets/windows.p12 -readpass ../../secrets/windows.p12.pass.txt', shell=True)
-        
+
         os.chdir(os.path.join(workdir, 'litecoin-detached-sigs'))
         subprocess.check_call(['git', 'checkout', '-B', args.version])
         subprocess.check_call(['rm', '-rf', '*'])
         subprocess.check_call(['tar', 'xf', '../signing/'+args.version+'/signature-win.tar.gz'])
         subprocess.check_call(['git', 'add', '-A'])
-        
+
     if args.commit_files:
         os.chdir(os.path.join(workdir, 'litecoin-detached-sigs'))
         subprocess.check_call(['git', 'commit', '-m', 'point to '+args.version])
@@ -188,10 +189,10 @@ def codesign():
 def sign():
     global args, workdir
     os.chdir(os.path.join(workdir, 'gitian-builder'))
-    
+
     # Set GPG Passphrase
     preset_gpg_passphrase()
-    
+
     if args.windows:
         print('\nSigning ' + args.version + ' Windows')
         subprocess.check_call('cp inputs/litecoin-' + args.version + '-win-unsigned.tar.gz inputs/litecoin-win-unsigned.tar.gz', shell=True)
@@ -216,10 +217,10 @@ def sign():
 def verify():
     global args, workdir
     rc = 0
-    
+
     os.chdir(os.path.join(workdir, 'gitian.sigs.ltc'))
     subprocess.check_call(['git', 'pull'])
-    
+
     os.chdir(os.path.join(workdir, 'gitian-builder'))
 
     print('\nVerifying v'+args.version+' Linux\n')
@@ -252,47 +253,67 @@ def verify():
 def package():
     global args, workdir
     rc = 0
-    
+
     release_dir = os.path.join(workdir, 'litecoin-binaries', args.version)
     os.chdir(release_dir)
-    
+
     # Set GPG Passphrase
     preset_gpg_passphrase()
-    
+
     print('\nSigning and packaging release\n')
-    
+
     # Move relevant files to release directory
     subprocess.check_call('mkdir -p debug && mv ./*-debug* ./debug', shell=True)
     subprocess.check_call('mkdir -p unsigned && mv ./*-unsigned* ./unsigned', shell=True)
     subprocess.check_call('mkdir -p release && find . -maxdepth 1 -type f | xargs mv -t ./release', shell=True)
     os.chdir(os.path.join(release_dir, 'release'))
-    
+
     # Generate SHA256SUMS.asc
     subprocess.check_call('sha256sum * > SHA256SUMS && gpg --digest-algo sha256 --clearsign SHA256SUMS && rm ./SHA256SUMS', shell=True)
-    
+
     # Move to linux, osx, src, and win folders
     subprocess.check_call('mkdir -p src && mv ./litecoin-' + args.version + '.tar.gz ./src', shell=True)
     subprocess.check_call('mkdir -p linux && mv ./*-linux* ./linux', shell=True)
     subprocess.check_call('mkdir -p osx && mv ./*-osx* ./osx', shell=True)
     subprocess.check_call('mkdir -p win && mv ./*-win* ./win', shell=True)
-    
+
     # Sign binaries
     subprocess.check_call('for f in ./*/*; do if [ ! -d "$f" ]; then gpg --digest-algo sha256 --armor --detach-sign $f; fi done', shell=True)
-    
+
+
+def update_gpg_agent_conf():
+    config_path = os.path.expanduser('~/.gnupg/gpg-agent.conf')
+    with open(config_path, 'a') as config_file:
+        config_file.write('\ndefault-cache-ttl 3600\n')
+        config_file.write('max-cache-ttl 86400\n')
+        config_file.write('allow-preset-passphrase\n')
+
+
 def preset_gpg_passphrase():
     global args
-    
-    subprocess.call(['gpgconf', '--kill', 'gpg-agent'])
-    subprocess.check_call(['gpg-agent', '--daemon', '--allow-preset-passphrase'])
-    
-    keygrips = subprocess.run("gpg --fingerprint --with-keygrip {} | awk '/Keygrip/ {{ print $3}}'".format(args.signer), shell=True, text=True, stdout=subprocess.PIPE).stdout.splitlines()
-    
+
+    if args.gpg_configured:
+        return
+
+    update_gpg_agent_conf()
+
+    # Reload gpg-agent configuration without killing it
+    subprocess.call(['gpg-connect-agent', 'reloadagent', '/bye'])
+
+    # Extract keygrips
+    gpg_output = subprocess.run(f"gpg --fingerprint --with-keygrip {args.signer}", shell=True, text=True, stdout=subprocess.PIPE).stdout
+    keygrips = [line.split('=')[1].strip() for line in gpg_output.splitlines() if 'Keygrip' in line]
+
+    # Preset the passphrase
     for keygrip in keygrips:
-        subprocess.check_call('echo "{0}"  | /usr/lib/gnupg/gpg-preset-passphrase --preset {1}'.format(args.gpg_password, keygrip), shell=True)
-    
+        cmd = f'echo "{args.gpg_password}" | /usr/lib/gnupg/gpg-preset-passphrase --preset {keygrip}'
+        subprocess.check_call(cmd, shell=True)
+
+    args.gpg_configured = True
+
 def main():
     global args, workdir
-    
+
     args = parse_args()
     workdir = os.getcwd()
 
@@ -309,7 +330,7 @@ def main():
             os.environ['GITIAN_HOST_IP'] = '10.0.3.1'
         if 'LXC_GUEST_IP' not in os.environ.keys():
             os.environ['LXC_GUEST_IP'] = '10.0.3.5'
-    
+
     if (args.build or args.sign or args.codesign or args.package) and len(args.gpg_password) == 0:
         args.gpg_password = getpass.getpass("GPG Password: ") # TODO: First check if key is actually password protected
 
@@ -324,7 +345,7 @@ def main():
         subprocess.check_call(['git', 'fetch', args.url, 'refs/pull/'+args.version+'/merge'])
         args.commit = subprocess.check_output(['git', 'show', '-s', '--format=%H', 'FETCH_HEAD'], universal_newlines=True, encoding='utf8').strip()
         args.version = 'pull-' + args.version
-    
+
     print('args.commit=' + args.commit)
     print('args.version=' + args.version)
 
@@ -343,11 +364,9 @@ def main():
 
     if args.verify:
         sys.exit(verify())
-        
+
     if args.package:
         package()
-
-    print('\nDONE\n')
 
 if __name__ == '__main__':
     main()
