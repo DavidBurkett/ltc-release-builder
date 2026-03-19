@@ -131,14 +131,16 @@ def build():
     if args.linux:
         print('\nCompiling ' + args.version + ' Linux')
         subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-linux.yml'])
-        preset_gpg_passphrase()
+        if not args.detach_sign:
+            preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-linux', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-linux.yml'])
         subprocess.check_call('mv build/out/litecoin-*.tar.gz build/out/src/litecoin-*.tar.gz ../litecoin-binaries/'+args.version, shell=True)
 
     if args.windows:
         print('\nCompiling ' + args.version + ' Windows')
         subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-win.yml'])
-        preset_gpg_passphrase()
+        if not args.detach_sign:
+            preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-win-unsigned', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-win.yml'])
         subprocess.check_call('mv build/out/litecoin-*-win-unsigned.tar.gz inputs/', shell=True)
         subprocess.check_call('mv build/out/litecoin-*.zip build/out/litecoin-*.exe build/out/src/litecoin-*.tar.gz ../litecoin-binaries/'+args.version, shell=True)
@@ -146,7 +148,8 @@ def build():
     if args.macos:
         print('\nCompiling ' + args.version + ' MacOS')
         subprocess.check_call(['bin/gbuild', '-j', args.jobs, '-m', args.memory, '--fetch-tags', '--commit', 'litecoin='+args.commit, '--url', 'litecoin='+args.url, '../gitian-descriptors/gitian-osx.yml'])
-        preset_gpg_passphrase()
+        if not args.detach_sign:
+            preset_gpg_passphrase()
         subprocess.check_call(['bin/gsign', '-p', args.sign_prog, '--signer', args.signer, '--release', args.version+'-osx-unsigned', '--destination', '../gitian.sigs.ltc/', '../gitian-descriptors/gitian-osx.yml'])
         subprocess.check_call('mv build/out/litecoin-*-osx-unsigned.tar.gz inputs/', shell=True)
         subprocess.check_call('mv build/out/litecoin-*.tar.gz build/out/litecoin-*.dmg build/out/src/litecoin-*.tar.gz ../litecoin-binaries/'+args.version, shell=True)
